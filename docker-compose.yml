@@ -1,0 +1,54 @@
+version: '0.1'
+
+services:
+  openldap:
+    image: bitnami/openldap:latest
+    hostname: openldap
+    container_name: openldap_guacamole
+    ports:
+      - 1389:1389
+      - 1636:1636
+    env_file:
+      - openldap.dev.env
+    restart: always
+    volumes:
+      - ./.data/openldap:/bitnami/openldap
+      - ./.data/certs:/bitnami/certs
+  postgres:
+    container_name: postgres_guacamole
+    env_file:
+      - postgres.dev.env
+    image: postgres
+    restart: always
+    volumes:
+    - ./.data/init:/docker-entrypoint-initdb.d:ro
+    - ./.data/postgres/data:/var/lib/postgresql/data:rw
+  guacd:
+    image: guacamole/guacd:latest
+    container_name: guacd_guacamole
+    ports:
+      - 4822:4822
+    env_file:
+      - guacamole.dev.env
+    restart: always
+    volumes:
+      - ./.data/guacd/drive:/drive:rw
+      - ./.data/guacd/record:/record:rw
+  guacamole:
+    image: guacamole/guacamole:latest
+    container_name: guacamole
+    ports:
+      - 8080:8080
+    env_file:
+      - guacamole.dev.env
+    restart: always
+    links:
+      - guacd
+      - openldap
+      - postgres
+    volumes:
+      - ./.data/guacamole:/config
+    depends_on:
+      - guacd
+      - postgres
+      - openldap

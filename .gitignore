@@ -1,0 +1,12 @@
+.test
+*.env
+.venv
+.python/
+/containers
+.data/guacamole/*
+.data/openldap/*
+.data/certs/*
+.data/init/*
+.data/openldap/data
+.data/openldap/slapd.d
+data/
