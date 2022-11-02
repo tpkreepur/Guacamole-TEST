@@ -38,7 +38,7 @@ services:
     image: guacamole/guacamole:latest
     container_name: guacamole
     ports:
-      - 8080:8080
+      - 80:8080
     env_file:
       - guacamole.dev.env
     restart: always
@@ -47,7 +47,7 @@ services:
       - openldap
       - postgres
     volumes:
-      - ./.data/guacamole:/config
+      - ./.data/guacamole/guacamole:/home/guacamole
     depends_on:
       - guacd
       - postgres

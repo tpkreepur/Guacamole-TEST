@@ -8,7 +8,9 @@ then
 fi
 echo "Preparing folder init and creating ./.data/init/initdb.sql"
 mkdir ./.data/init >/dev/null 2>&1
-mkdir -p ./.data/nginx/ssl >/dev/null 2>&1
+mkdir ./.data/guacamole >/dev/null 2>&1
+mkdir ./.data/gaucd >/dev/null 2>&1
+mkdir ./.data/openldap >/dev/null 2>&1
 chmod -R +x ./.data/init
 docker run --rm guacamole/guacamole /opt/guacamole/bin/initdb.sh --postgres > ./.data/init/initdb.sql
 echo "done"

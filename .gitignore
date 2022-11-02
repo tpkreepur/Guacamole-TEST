@@ -1,5 +1,6 @@
 .test
 *.env
+*.properties
 .venv
 .python/
 /containers
