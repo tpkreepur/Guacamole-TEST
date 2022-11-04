@@ -1,2 +1,0 @@
-FROM bitnami/openldap
-RUN apt-get update && apt-get install authconfig -y

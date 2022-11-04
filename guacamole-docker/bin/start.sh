@@ -23,7 +23,7 @@
 ##
 ## Automatically configures and starts Guacamole under Tomcat. Guacamole's
 ## guacamole.properties file will be automatically generated based on the
-## linked database container (either MySQL or PostgreSQL) and the linked guacd
+## linked database container (either MySQL, PostgreSQL or SQLServer) and the linked guacd
 ## container. The Tomcat process will ultimately replace the process of this
 ## script, running in the foreground until terminated.
 ##
@@ -403,6 +403,154 @@ END
 
 }
 
+# Print error message regarding missing required variables for SQLServer authentication
+sqlserver_missing_vars() {
+    cat <<END
+FATAL: Missing required environment variables
+-------------------------------------------------------------------------------
+If using a SQLServer database, you must provide each of the following
+environment variables:
+
+    SQLSERVER_USER     The user to authenticate as when connecting to
+                       SQLServer.
+
+    SQLSERVER_PASSWORD The password to use when authenticating with SQLServer
+                       as SQLSERVER_USER.
+
+    SQLSERVER_DATABASE The name of the SQLServer database to use for Guacamole
+                       authentication.
+
+Alternatively, if you want to store database credentials using Docker secrets,
+set the path of the corresponding secrets in the following three variables:
+
+    SQLSERVER_DATABASE_FILE   The path of the docker secret containing the name
+                              of database to use for Guacamole authentication.
+
+    SQLSERVER_USER_FILE       The path of the docker secret containing the name of
+                              the user that Guacamole will use to connect to SQLServer.
+
+    SQLSERVER_PASSWORD_FILE   The path of the docker secret containing the
+                              password that Guacamole will provide when connecting to 
+                              SQLServer as SQLSERVER_USER.
+
+END
+    exit 1;
+}
+
+##
+## Adds properties to guacamole.properties which select the SQLServer
+## authentication provider, and configure it to connect to the linked
+## SQLServer container. If a SQLServer database is explicitly specified using
+## the SQLSERVER_HOSTNAME and SQLSERVER_PORT environment variables, that will
+## be used instead of a linked container.
+##
+associate_sqlserver() {
+
+    # Use linked container if specified
+    if [ -n "$SQLSERVER_NAME" ]; then
+        SQLSERVER_HOSTNAME="$SQLSERVER_PORT_1433_TCP_ADDR"
+        SQLSERVER_PORT="$SQLSERVER_PORT_1433_TCP_PORT"
+    fi
+
+    # Use default port if none specified
+    SQLSERVER_PORT="${SQLSERVER_PORT-1433}"
+
+    # Verify required connection information is present
+    if [ -z "$SQLSERVER_HOSTNAME" -o -z "$SQLSERVER_PORT" ]; then
+        cat <<END
+FATAL: Missing SQLSERVER_HOSTNAME or "sqlserver" link.
+-------------------------------------------------------------------------------
+If using a SQLServer database, you must either:
+
+(a) Explicitly link that container with the link named "sqlserver".
+
+(b) If not using a Docker container for SQLServer, explicitly specify the TCP
+    connection to your database using the following environment variables:
+
+    SQLSERVER_HOSTNAME The hostname or IP address of the SQLServer server. If
+                       not using a SQLServer Docker container and
+                       corresponding link, this environment variable is
+                       *REQUIRED*.
+
+    SQLSERVER_PORT     The port on which the SQLServer server is listening for
+                       TCP connections. This environment variable is option. If
+                       omitted, the standard SQLServer port of 1433 will be
+                       used.
+END
+        exit 1;
+    fi
+
+    # Verify that the required Docker secrets are present, else, default to their normal environment variables
+    if [ -n "$SQLSERVER_USER_FILE" ]; then
+        set_property "sqlserver-username" "`cat "$SQLSERVER_USER_FILE"`"
+    elif [ -n "$SQLSERVER_USER" ]; then
+        set_property "sqlserver-username" "$SQLSERVER_USER"
+    else
+        sqlserver_missing_vars
+        exit 1;
+    fi
+
+    if [ -n "$SQLSERVER_PASSWORD_FILE" ]; then
+        set_property "sqlserver-password" "`cat "$SQLSERVER_PASSWORD_FILE"`"
+    elif [ -n "$SQLSERVER_PASSWORD" ]; then
+        set_property "sqlserver-password" "$SQLSERVER_PASSWORD"
+    else
+        sqlserver_missing_vars
+        exit 1;
+    fi
+
+    if [ -n "$SQLSERVER_DATABASE_FILE" ]; then
+        set_property "sqlserver-database" "`cat "$SQLSERVER_DATABASE_FILE"`"
+    elif [ -n "$SQLSERVER_DATABASE" ]; then
+        set_property "sqlserver-database" "$SQLSERVER_DATABASE"
+    else
+        sqlserver_missing_vars
+        exit 1;
+    fi
+
+    # Update config file
+    set_property "sqlserver-hostname" "$SQLSERVER_HOSTNAME"
+    set_property "sqlserver-port"     "$SQLSERVER_PORT"
+    set_property "sqlserver-driver"   "microsoft2005"
+
+    set_optional_property               \
+        "sqlserver-absolute-max-connections" \
+        "$SQLSERVER_ABSOLUTE_MAX_CONNECTIONS"
+
+    set_optional_property                    \
+        "sqlserver-default-max-connections" \
+        "$SQLSERVER_DEFAULT_MAX_CONNECTIONS"
+
+    set_optional_property                          \
+        "sqlserver-default-max-group-connections" \
+        "$SQLSERVER_DEFAULT_MAX_GROUP_CONNECTIONS"
+
+    set_optional_property                             \
+        "sqlserver-default-max-connections-per-user" \
+        "$SQLSERVER_DEFAULT_MAX_CONNECTIONS_PER_USER"
+
+    set_optional_property                                   \
+        "sqlserver-default-max-group-connections-per-user" \
+        "$SQLSERVER_DEFAULT_MAX_GROUP_CONNECTIONS_PER_USER"
+
+    set_optional_property          \
+        "sqlserver-user-required" \
+        "$SQLSERVER_USER_REQUIRED"
+
+    set_optional_property                  \
+        "sqlserver-auto-create-accounts"  \
+        "$SQLSERVERQL_AUTO_CREATE_ACCOUNTS"
+
+    set_optional_property      \
+        "sqlserver-instance"  \
+        "$SQLSERVERQL_INSTANCE"
+
+    # Add required .jar files to GUACAMOLE_LIB and GUACAMOLE_EXT
+    ln -s /opt/guacamole/sqlserver/mssql-jdbc-*.jar "$GUACAMOLE_LIB"
+    ln -s /opt/guacamole/sqlserver/guacamole-auth-*.jar "$GUACAMOLE_EXT"
+
+}
+
 ##
 ## Adds properties to guacamole.properties which select the LDAP
 ## authentication provider, and configure it to connect to the specified LDAP
@@ -585,6 +733,7 @@ END
     set_property          "openid-client-id"                 "$OPENID_CLIENT_ID"
     set_property          "openid-redirect-uri"              "$OPENID_REDIRECT_URI"
     set_optional_property "openid-username-claim-type"       "$OPENID_USERNAME_CLAIM_TYPE"
+    set_optional_property "openid-groups-claim-type"         "$OPENID_GROUPS_CLAIM_TYPE"
     set_optional_property "openid-max-token-validity"        "$OPENID_MAX_TOKEN_VALIDITY"
 
     # Add required .jar files to GUACAMOLE_EXT
@@ -592,6 +741,58 @@ END
     # so it can work together with the database providers (authorization)
     find /opt/guacamole/openid/ -name "*.jar" | awk -F/ '{print $NF}' | \
     xargs -I '{}' ln -s "/opt/guacamole/openid/{}" "${GUACAMOLE_EXT}/1-{}"
+
+}
+
+##
+## Adds properties to guacamole.properties which select the SAML
+## authentication provider, and configure it to connect to the specified SAML
+## provider.
+##
+associate_saml() {
+
+    # Verify required parameters are present
+    if [ -z "$SAML_IDP_METADATA_URL" ] && \
+       [ -z "$SAML_ENTITY_ID" -o -z "$SAML_CALLBACK_URL" ]
+    then
+        cat <<END
+FATAL: Missing required environment variables
+-------------------------------------------------------------------------------
+If using a SAML authentication, you must provide either SAML_IDP_METADATA_URL
+or both SAML_ENTITY_ID and SAML_CALLBACK_URL environment variables:
+
+    SAML_IDP_METADATA_URL   The URI of the XML metadata file that from the SAML Identity
+                            Provider that contains all of the information the SAML
+                            extension needs in order to know how to authenticate with
+                            the IdP. This URI can either be a remote server (e.g. https://)
+                            or a local file on the filesystem (e.g. file://).
+
+    SAML_ENTITY_ID          The entity ID of the Guacamole SAML client, which is
+                            generally the URL of the Guacamole server
+
+    SAML_CALLBACK_URL       The URL that the IdP will use once authentication has
+                            succeeded to return to the Guacamole web application and
+                            provide the authentication details to the SAML extension.
+END
+        exit 1;
+    fi
+
+    # Update config file
+    set_optional_property "saml-idp-metadata-url"            "$SAML_IDP_METADATA_URL"
+    set_optional_property "saml-idp-url"                     "$SAML_IDP_URL"
+    set_optional_property "saml-entity-id"                   "$SAML_ENTITY_ID"
+    set_optional_property "saml-callback-url"                "$SAML_CALLBACK_URL"
+    set_optional_property "saml-strict"                      "$SAML_STRICT"
+    set_optional_property "saml-debug"                       "$SAML_DEBUG"
+    set_optional_property "saml-compress-request"            "$SAML_COMPRESS_REQUEST"
+    set_optional_property "saml-compress-response"           "$SAML_COMPRESS_RESPONSE"
+    set_optional_property "saml-group-attribute"             "$SAML_GROUP_ATTRIBUTE"
+
+    # Add required .jar files to GUACAMOLE_EXT
+    # "1-{}" make it sorted as a first provider (only authentication)
+    # so it can work together with the database providers (authorization)
+    find /opt/guacamole/saml/ -name "*.jar" | awk -F/ '{print $NF}' | \
+    xargs -I '{}' ln -s "/opt/guacamole/saml/{}" "${GUACAMOLE_EXT}/1-{}"
 
 }
 
@@ -710,40 +911,64 @@ associate_json() {
     ln -s /opt/guacamole/json/guacamole-auth-*.jar "$GUACAMOLE_EXT"
 }
 ##
+## Sets up Tomcat's remote IP valve that allows gathering the remote IP
+## from headers set by a remote proxy
+## Upstream documentation: https://tomcat.apache.org/tomcat-8.5-doc/api/org/apache/catalina/valves/RemoteIpValve.html
 ##
-##
-##
-associate_saml() {
-    # Verify required parameters are present
-    if [ -z "$SAML_IDP_METADATA_URL"]; then
-        cat <<END
-FATAL: Missing SAML_IDP_METADATA_URL.
--------------------------------------------------------------------------------
-If using a SAML authentication, you must:
+enable_remote_ip_valve() {
+    # Add <Valve> element
+    xmlstarlet edit --inplace \
+        --insert '/Server/Service/Engine/Host/*' --type elem -n Valve \
+        --insert '/Server/Service/Engine/Host/Valve[not(@className)]' --type attr -n className -v org.apache.catalina.valves.RemoteIpValve \
+        $CATALINA_BASE/conf/server.xml
 
-(a) Explicitly specify the connection to your Idp using the following
-    environment variables:
-
-    SAML_IDP_METADATA_URL     The metadata url of the Idp server.
-    This field is *REQUIRED*.
-END
-        exit 1;
+    # Allowed IPs
+    if [ -z "$PROXY_ALLOWED_IPS_REGEX" ]; then
+        echo "Using default Tomcat allowed IPs regex"
+    else
+        xmlstarlet edit --inplace \
+            --insert '/Server/Service/Engine/Host/Valve[@className="org.apache.catalina.valves.RemoteIpValve"]' \
+            --type attr -n internalProxies -v "$PROXY_ALLOWED_IPS_REGEX" \
+            $CATALINA_BASE/conf/server.xml
     fi
-    # Update config file
-    set_property          "saml-idp-metadata-url"   "$SAML_IDP_METADATA_URL"
-    set_optional_property "saml-idp-url"  "$SAML_GROUP_ATTRIBUTE"
-    set_optional_property "saml-entity-id"  "$SAML_ENTITY_ID"
-    set_optional_property "saml-callback-url"  "$SAML_CALLBACK_URL"
-    set_optional_property "saml-strict"  "$SAML_STRICT"
-    set_optional_property "saml-debug"  "$SAML_DEBUG"
-    set_optional_property "saml-compress-request"  "$SAML_COMPRESS_REQUEST"
-    set_optional_property "saml-compress-response"  "$SAML_COMPRESS_RESPONSE"
-    set_optional_property "saml-group-attribute"  "$SAML_GROUP_ATTRIBUTE"
 
-    # Add required .jar files to GUACAMOLE_EXT
-    ln -s /opt/guacamole/saml/guacamole-auth-*.jar "$GUACAMOLE_EXT"
+    # X-Forwarded-For
+    if [ -z "$PROXY_IP_HEADER" ]; then
+        echo "Using default Tomcat proxy IP header"
+    else
+        xmlstarlet edit --inplace \
+            --insert "/Server/Service/Engine/Host/Valve[@className='org.apache.catalina.valves.RemoteIpValve']" \
+            --type attr -n remoteIpHeader -v "$PROXY_IP_HEADER" \
+            $CATALINA_BASE/conf/server.xml
+    fi
+
+    # X-Forwarded-Proto
+    if [ -z "$PROXY_PROTOCOL_HEADER" ]; then
+        echo "Using default Tomcat proxy protocol header"
+    else
+        xmlstarlet edit --inplace \
+            --insert "/Server/Service/Engine/Host/Valve[@className='org.apache.catalina.valves.RemoteIpValve']" \
+            --type attr -n protocolHeader -v "$PROXY_PROTOCOL_HEADER" \
+            $CATALINA_BASE/conf/server.xml
+    fi
+
+    # X-Forwarded-By
+    if [ -z "$PROXY_BY_HEADER" ]; then
+        echo "Using default Tomcat proxy forwarded by header"
+    else
+        xmlstarlet edit --inplace \
+            --insert "/Server/Service/Engine/Host/Valve[@className='org.apache.catalina.valves.RemoteIpValve']" \
+            --type attr -n remoteIpProxiesHeader -v "$PROXY_BY_HEADER" \
+            $CATALINA_BASE/conf/server.xml
+    fi
 }
 
+##
+## Adds api-session-timeout to guacamole.properties
+##
+associate_apisessiontimeout() {
+    set_optional_property "api-session-timeout" "$API_SESSION_TIMEOUT"
+}
 
 ##
 ## Starts Guacamole under Tomcat, replacing the current process with the
@@ -758,6 +983,11 @@ start_guacamole() {
         mkdir -p $CATALINA_BASE/$dir
     done
     cp -R /usr/local/tomcat/conf $CATALINA_BASE
+
+    # Set up Tomcat RemoteIPValve
+    if [ "$REMOTE_IP_VALVE_ENABLED" = "true" ]; then
+        enable_remote_ip_valve
+    fi
 
     # Install webapp
     ln -sf /opt/guacamole/guacamole.war $CATALINA_BASE/webapps/${WEBAPP_CONTEXT:-guacamole}.war
@@ -836,12 +1066,6 @@ set_property "guacd-port"     "$GUACD_PORT"
 
 INSTALLED_AUTH=""
 
-# Use SAML if specified
-if [ -n "$SAML_IDP_METADATA_URL" ]; then
-    associate_saml
-    INSTALLED_AUTH="$INSTALLED_AUTH saml"
-fi
-
 # Use MySQL if database specified
 if [ -n "$MYSQL_DATABASE" -o -n "$MYSQL_DATABASE_FILE" ]; then
     associate_mysql
@@ -852,6 +1076,12 @@ fi
 if [ -n "$POSTGRES_DATABASE" -o -n "$POSTGRES_DATABASE_FILE" ]; then
     associate_postgresql
     INSTALLED_AUTH="$INSTALLED_AUTH postgres"
+fi
+
+# Use SQLServer if database specified
+if [ -n "$SQLSERVER_DATABASE" -o -n "$SQLSERVER_DATABASE_FILE" ]; then
+    associate_sqlserver
+    INSTALLED_AUTH="$INSTALLED_AUTH sqlserver"
 fi
 
 # Use LDAP directory if specified
@@ -872,21 +1102,10 @@ if [ -n "$OPENID_AUTHORIZATION_ENDPOINT" ]; then
     INSTALLED_AUTH="$INSTALLED_AUTH openid"
 fi
 
-#
-# Validate that at least one authentication backend is installed
-#
-
-if [ -z "$INSTALLED_AUTH" -a -z "$GUACAMOLE_HOME_TEMPLATE" ]; then
-    cat <<END
-FATAL: No authentication configured
--------------------------------------------------------------------------------
-The Guacamole Docker container needs at least one authentication mechanism in
-order to function, such as a MySQL database, PostgreSQL database, LDAP
-directory or RADIUS server. Please specify at least the MYSQL_DATABASE or
-POSTGRES_DATABASE environment variables, or check Guacamole's Docker
-documentation regarding configuring LDAP and/or custom extensions.
-END
-    exit 1;
+# Use SAML if specified
+if [ -n "$SAML_IDP_METADATA_URL" ] || [ -n "$SAML_ENTITY_ID" -a -n "$SAML_CALLBACK_URL" ]; then
+    associate_saml
+    INSTALLED_AUTH="$INSTALLED_AUTH saml"
 fi
 
 # Use TOTP if specified.
@@ -912,7 +1131,46 @@ fi
 # Use json-auth if specified.
 if [ -n "$JSON_SECRET_KEY" ]; then
     associate_json
+    INSTALLED_AUTH="$INSTALLED_AUTH json"
 fi
+
+#
+# Validate that at least one authentication backend is installed
+#
+
+if [ -z "$INSTALLED_AUTH" -a -z "$GUACAMOLE_HOME_TEMPLATE" ]; then
+    cat <<END
+FATAL: No authentication configured
+-------------------------------------------------------------------------------
+The Guacamole Docker container needs at least one authentication mechanism in
+order to function, such as a MySQL database, PostgreSQL database, SQLServer
+database, LDAP directory or RADIUS server. Please specify at least the
+MYSQL_DATABASE or POSTGRES_DATABASE or SQLSERVER_DATABASE environment variables,
+or check Guacamole's Docker documentation regarding configuring LDAP and/or
+custom extensions.
+END
+    exit 1;
+fi
+
+# Set extension priority if specified
+set_optional_property "extension-priority" "$EXTENSION_PRIORITY"
+
+# Use api-session-timeout if specified.
+if [ -n "$API_SESSION_TIMEOUT" ]; then
+    associate_apisessiontimeout
+fi
+
+# Apply any overrides for default address ban behavior
+set_optional_property "ban-address-duration" "$BAN_ADDRESS_DURATION"
+set_optional_property "ban-max-addresses" "$BAN_MAX_ADDRESSES"
+set_optional_property "ban-max-invalid-attempts" "$BAN_MAX_INVALID_ATTEMPTS"
+
+# Always load guacamole-auth-ban extension (automatic banning can be disabled
+# through seting BAN_ADDRESS_DURATION to 0). As guacamole-auth-ban performs
+# its banning by handling a pre-authentication event, it is guaranteed to
+# perform its checks before all other auth processing and load order does not
+# matter.
+ln -s /opt/guacamole/ban/guacamole-auth-*.jar "$GUACAMOLE_EXT"
 
 # Set logback level if specified
 if [ -n "$LOGBACK_LEVEL" ]; then

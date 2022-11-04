@@ -1,10 +1,11 @@
-### Guacamole Proxy
+### Guacamole Proxy for NGINX with SSL
+
 server {
     listen       443 ssl http2;
-    server_name  localhost;
+    server_name  workspace.red-arrowit.com;
 
-        ssl_certificate /etc/nginx/ssl/self.cert;
-        ssl_certificate_key /etc/nginx/ssl/self-ssl.key;
+        ssl_certificate /etc/ssl/red-arrowit.com.cert;
+        ssl_certificate_key /etc/ssl/private/red-arrowit.com.key;
 
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_prefer_server_ciphers on;
@@ -14,14 +15,14 @@ server {
         ssl_session_tickets off;
         ssl_stapling off;
         ssl_stapling_verify off;
-#        resolver 8.8.8.8 8.8.4.4 valid=300s;
-#        resolver_timeout 5s;
+        resolver 8.8.8.8 8.8.4.4 valid=300s;
+        resolver_timeout 5s;
 
     #charset koi8-r;
     #access_log  /var/log/nginx/host.access.log  main;
 
     location / {
-    proxy_pass http://guacamole:8080/guacamole/;
+    proxy_pass http://GUACAMOLE_HOSTNAME/guacamole/;
     proxy_buffering off;
     proxy_http_version 1.1;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

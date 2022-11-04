@@ -14,15 +14,6 @@ services:
     volumes:
       - ./.data/openldap:/bitnami/openldap
       - ./.data/certs:/bitnami/certs
-  postgres:
-    container_name: postgres_guacamole
-    env_file:
-      - postgres.dev.env
-    image: postgres
-    restart: always
-    volumes:
-    - ./.data/init:/docker-entrypoint-initdb.d:ro
-    - ./.data/postgres/data:/var/lib/postgresql/data:rw
   guacd:
     image: guacamole/guacd:latest
     container_name: guacd_guacamole
@@ -45,10 +36,5 @@ services:
     links:
       - guacd
       - openldap
-      - postgres
     volumes:
-      - ./.data/guacamole/guacamole:/home/guacamole
-    depends_on:
-      - guacd
-      - postgres
-      - openldap
+      - ./.data/guacamole/:/config
