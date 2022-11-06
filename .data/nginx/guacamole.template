@@ -4,7 +4,7 @@ server {
     listen       443 ssl http2;
     server_name  workspace.red-arrowit.com;
 
-        ssl_certificate /etc/ssl/red-arrowit.com.cert;
+        ssl_certificate /etc/ssl/red-arrowit.com.crt;
         ssl_certificate_key /etc/ssl/private/red-arrowit.com.key;
 
         ssl_protocols TLSv1.2 TLSv1.3;
